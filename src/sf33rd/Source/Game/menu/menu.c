@@ -2906,16 +2906,18 @@ s32 Exit_Sub(struct _TASK* task_ptr, s16 cursor_ix, s16 next_routine) {
         /* fallthrough */
 
     case 1:
-        if (FadeOut(1, 0x19, 8) != 0) {
-            task_ptr->r_no[1] = next_routine;
-            task_ptr->r_no[2] = 0;
-            task_ptr->r_no[3] = 0;
-            task_ptr->free[0] = 0;
-            Cursor_Y_Pos[0][cursor_ix] = Menu_Cursor_Y[0];
-            Cursor_Y_Pos[1][cursor_ix] = Menu_Cursor_Y[1];
-            pulpul_stop();
-            return 1;
+        if (!FadeOut(1, 25, 8)) {
+            return 0;
         }
+
+        task_ptr->r_no[1] = next_routine;
+        task_ptr->r_no[2] = 0;
+        task_ptr->r_no[3] = 0;
+        task_ptr->free[0] = 0;
+        Cursor_Y_Pos[0][cursor_ix] = Menu_Cursor_Y[0];
+        Cursor_Y_Pos[1][cursor_ix] = Menu_Cursor_Y[1];
+        pulpul_stop();
+        return 1;
 
     default:
         return 0;
@@ -3611,6 +3613,10 @@ void VS_Result(struct _TASK* task_ptr) {
 
     case 7:
     default:
+        if (Netplay_IsRunning()) {
+            Netplay_HandleMenuExit();
+        }
+
         if (Exit_Sub(task_ptr, 0, 0)) {
             System_all_clear_Level_B();
             BGM_Request_Code_Check(65);
@@ -3655,8 +3661,8 @@ s32 VS_Result_Select_Sub(struct _TASK* task_ptr, s16 PL_id) {
             Pause_ID = PL_id;
             return 1;
         }
-    } else if (sw == 0x200) {
-        IO_Result = 0x200;
+    } else if (sw == SWK_EAST) {
+        IO_Result = SWK_EAST;
         VS_Result_Move_Sub(task_ptr, PL_id);
     }
 
@@ -3666,17 +3672,18 @@ s32 VS_Result_Select_Sub(struct _TASK* task_ptr, s16 PL_id) {
 u16 After_VS_Move_Sub(u16 sw, s16 cursor_id, s16 menu_max) {
     s16 skip;
 
-    if (plw[0].wu.operator == 0 || plw[1].wu.operator == 0) {
+    if (plw[0].wu.operator == 0 || plw[1].wu.operator == 0 || Mode_Type == MODE_NETWORK) {
         skip = 1;
     } else {
         skip = 99;
     }
+
     if (Debug_w[49]) {
         skip = 99;
     }
 
     switch (sw) {
-    case 1:
+    case SWK_UP:
         Menu_Cursor_Y[cursor_id]--;
 
         if (Menu_Cursor_Y[cursor_id] < 0) {
@@ -3688,9 +3695,9 @@ u16 After_VS_Move_Sub(u16 sw, s16 cursor_id, s16 menu_max) {
         }
 
         SE_cursor_move();
-        return IO_Result = 1;
+        return IO_Result = SWK_UP;
 
-    case 2:
+    case SWK_DOWN:
         Menu_Cursor_Y[cursor_id]++;
 
         if (Menu_Cursor_Y[cursor_id] > menu_max) {
@@ -3702,43 +3709,43 @@ u16 After_VS_Move_Sub(u16 sw, s16 cursor_id, s16 menu_max) {
         }
 
         SE_cursor_move();
-        return IO_Result = 2;
+        return IO_Result = SWK_DOWN;
 
-    case 0x10:
-        return IO_Result = 0x10;
+    case SWK_WEST:
+        return IO_Result = SWK_WEST;
 
-    case 0x100:
-        return IO_Result = 0x100;
+    case SWK_SOUTH:
+        return IO_Result = SWK_SOUTH;
 
-    case 0x200:
-        return IO_Result = 0x200;
+    case SWK_EAST:
+        return IO_Result = SWK_EAST;
 
-    case 0x400:
-        return IO_Result = 0x400;
+    case SWK_RIGHT_TRIGGER:
+        return IO_Result = SWK_RIGHT_TRIGGER;
 
-    case 0x4000:
-        return IO_Result = 0x4000;
+    case SWK_START:
+        return IO_Result = SWK_START;
 
     default:
         return IO_Result = 0;
 
-    case 0x20:
-        return IO_Result = 0x20;
+    case SWK_NORTH:
+        return IO_Result = SWK_NORTH;
 
-    case 0x40:
-        return IO_Result = 0x40;
+    case SWK_RIGHT_SHOULDER:
+        return IO_Result = SWK_RIGHT_SHOULDER;
 
-    case 0x80:
-        return IO_Result = 0x80;
+    case SWK_LEFT_SHOULDER:
+        return IO_Result = SWK_LEFT_SHOULDER;
 
-    case 0x800:
-        return IO_Result = 0x800;
+    case SWK_LEFT_TRIGGER:
+        return IO_Result = SWK_LEFT_TRIGGER;
     }
 }
 
 s32 VS_Result_Move_Sub(struct _TASK* task_ptr, s16 PL_id) {
     switch (IO_Result) {
-    case 0x100:
+    case SWK_SOUTH:
         switch (Menu_Cursor_Y[PL_id]) {
         case 0:
             SE_selected();
@@ -3770,7 +3777,7 @@ s32 VS_Result_Move_Sub(struct _TASK* task_ptr, s16 PL_id) {
 
         break;
 
-    case 0x200:
+    case SWK_EAST:
         SE_selected();
 
         if (Menu_Cursor_X[PL_id]) {
