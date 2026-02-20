@@ -172,5 +172,10 @@ jobs:
             gh release create "${TAG_NAME}" release-assets/* \
               --title "${SHORT_SHA}" \
               --prerelease \
-              --notes "Automated release for commit ${{ github.sha }}."
+              --notes "$(cat <<'EOF'
+            Automatic release for commit ${FULL_SHA}
+
+            ⚠️ **Disclaimer** ⚠️: This is a __pre-release__ build. Expect bugs and instability.
+            EOF
+            )"
           fi
