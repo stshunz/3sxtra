@@ -11,7 +11,7 @@ The training mode and Trials mode are WIP and not fully implemented.
 
 ## Quick Start
 
-1. **Get the ROM**: You must provide your own legally obtained `sfiii3n.zip` arcade ROM. Place it in the `sfiii3n/` directory next to the executable.
+1. **Get the ISO**: You must provide your own legally obtained `.afs`  . Place it in the `rom` directory next to the executable.
 2. **Launch**: Run `3sx.exe` (Windows) or `./3sx` (Linux/macOS).
 3. **Controls**: Press **F1** anywhere to open the main menu and configure your controls. P1 defaults layout is WASD for movement and JKIUOP for buttons.
 4. **Portable Mode**: (Optional) Create an empty folder named `config/` next to the executable to redirect all saves, replays, and settings there instead of your user profile.
