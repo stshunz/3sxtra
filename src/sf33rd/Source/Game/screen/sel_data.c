@@ -224,7 +224,7 @@ const s16 Slide_Pos_Data_61[74][2] = {
     { -24, 28 },
     { -53, 78 }, /* [66] TRIALS */
     /* Network Lobby strings [67-73] */
-    { -128, 169 }, /* [67] NETWORK LOBBY — title position */
+    { -91, 203 }, /* [67] NETWORK LOBBY — centered on banner */
     { -150, 165 }, /* [68] AUTO-CONN (LAN) */
     { -150, 150 }, /* [69] CONNECT (LAN) */
     { 24, 165 },   /* [70] AUTO-CONN (NET) */

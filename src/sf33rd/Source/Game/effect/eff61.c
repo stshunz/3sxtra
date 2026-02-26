@@ -132,6 +132,8 @@ void effect_61_move(WORK_Other_CONN* ewk) {
             ewk->wu.my_bright_level = 8;
             ewk->wu.my_clear_level = 51;
         }
+    } else if (ewk->wu.char_index == 67) {
+        ewk->wu.my_clear_level = 0;  /* title always full brightness */
     } else if (Menu_Cursor_Y[ewk->master_id] == ewk->wu.type) {
         ewk->wu.my_clear_level = 0;
     } else if (ewk->wu.char_index == 1 && Connect_Status == 0) {

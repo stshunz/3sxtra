@@ -134,12 +134,11 @@ local GAME_ADDRS = {
     screen_y = 0x02026CB4,
 }
 
--- CPS3 RNG addresses (discovered via differential scan, hardcoded)
+-- CPS3 RNG addresses (confirmed via differential memory scan)
+-- Random_ix16 = 0x020155E8 (CONFIRMED: stays in [0,63], wraps at 64)
+-- TODO: ix32, ix16_ex, ix32_ex are NOT adjacent — need wider scan
 local RNG_ADDRS = {
-    ix16    = 0x02011374,
-    ix32    = 0x02011376,
-    ix16_ex = 0x02011378,
-    ix32_ex = 0x0201137A,
+    ix16    = 0x020155E8,  -- CONFIRMED Random_ix16
     stage   = 0x0201138A,
 }
 
@@ -282,12 +281,9 @@ local function read_game_state()
         screen_x = rws(GAME_ADDRS.screen_x),
         screen_y = rws(GAME_ADDRS.screen_y),
 
-        -- RNG seeds + stage
-        rng_16    = rw(RNG_ADDRS.ix16),
-        rng_32    = rw(RNG_ADDRS.ix32),
-        rng_16_ex = rw(RNG_ADDRS.ix16_ex),
-        rng_32_ex = rw(RNG_ADDRS.ix32_ex),
-        stage     = rb(RNG_ADDRS.stage),
+        -- RNG (confirmed ix16) + stage
+        rng_16  = rw(RNG_ADDRS.ix16),
+        stage   = rb(RNG_ADDRS.stage),
     }
 end
 
@@ -640,8 +636,7 @@ local function capture_frame()
         p1_def_bonus = gs.p1_def_bonus, p2_def_bonus = gs.p2_def_bonus,
         screen_x = gs.screen_x, screen_y = gs.screen_y,
         p1_hit = p1_hit, p2_hit = p2_hit,
-        rng_16 = gs.rng_16, rng_32 = gs.rng_32,
-        rng_16_ex = gs.rng_16_ex, rng_32_ex = gs.rng_32_ex,
+        rng_16 = gs.rng_16,
         stage = gs.stage,
     })
 
@@ -693,7 +688,7 @@ local function save_data()
         .. "p1_throw_countdown,p2_throw_countdown,p1_action_count,p2_action_count,"
         .. "p1_dmg_bonus,p2_dmg_bonus,p1_stun_bonus,p2_stun_bonus,p1_def_bonus,p2_def_bonus,"
         .. "screen_x,screen_y,"
-        .. "p1_hit,p2_hit,rng_16,rng_32,rng_16_ex,rng_32_ex,stage\n")
+        .. "p1_hit,p2_hit,rng_16,stage\n")
 
     for _, f in ipairs(captured) do
         local vals = {
@@ -739,8 +734,7 @@ local function save_data()
             f.p1_def_bonus, f.p2_def_bonus,
             f.screen_x, f.screen_y,
             f.p1_hit, f.p2_hit,
-            f.rng_16, f.rng_32, f.rng_16_ex, f.rng_32_ex,
-            f.stage
+            f.rng_16, f.stage
         }
         for i = 1, #vals do vals[i] = tostring(vals[i] or 0) end
         csv:write(table.concat(vals, ",") .. "\n")

@@ -78,6 +78,9 @@
 #include "sf33rd/Source/Game/system/work_sys.h"
 #include "sf33rd/Source/Game/ui/count.h"
 #include "sf33rd/Source/Game/ui/sc_sub.h"
+#include "sf33rd/Source/Game/ui/sc_data.h"
+#include "sf33rd/Source/Game/rendering/mtrans.h"
+#include "port/renderer.h"
 #include "structs.h"
 
 // forward decls
@@ -446,7 +449,7 @@ static void Network_Lobby(struct _TASK* task_ptr) {
 
         /* Red slide-in header bar */
         Order_Dir[0x4E] = 1;
-        effect_57_init(0x4E, 1, 0, 0x45, 0);
+        effect_57_init(0x4E, 0, 0, 0x45, 0);
 
         /* (Grey overlay bar effect removed based on user feedback) */
         // effect_66_init(0x8A, 0x13, 1, 0, -1, -1, -0x8000);
@@ -467,6 +470,12 @@ static void Network_Lobby(struct _TASK* task_ptr) {
                 Order_Timer[ix + 0x50] = ix + 0x14;
             }
         }
+
+        /* Title: "NETWORK LOBBY" in big CG font (0x7047), string index 67 */
+        effect_61_init(0, 0x5F, 0, 1, 67, -1, 0x7047);
+        Order[0x5F] = 1;
+        Order_Dir[0x5F] = 4;
+        Order_Timer[0x5F] = 0x12;
 
         Menu_Cursor_Move = 6;
 
@@ -504,9 +513,31 @@ static void Network_Lobby(struct _TASK* task_ptr) {
         }
         const s16 sl = (s16)s_slide_offset;
 
-        /* Add Screen Header */
-        Akaobi();
-        SSPutStr_Bigger(114 + sl, 0x16, 9, (s8*)"NETWORK LOBBY", 1.5f, 2, 1);
+        /* Custom red banner (brighter than default Akaobi 0xA0D00000) */
+        {
+            PAL_CURSOR_P ap[4];
+            PAL_CURSOR_COL acol[4];
+            u8 ci;
+            for (ci = 0; ci < 4; ci++) {
+                ap[ci].x = Akaobi_Pos_tbl[ci * 2];
+                ap[ci].y = Akaobi_Pos_tbl[(ci * 2) + 1];
+                acol[ci].color = 0xFFCC0000;  /* fully opaque vibrant red */
+            }
+            Renderer_Queue2DPrimitive((f32*)ap, PrioBase[69], (uintptr_t)acol[0].color, 0);
+
+            /* White top border (1px, 1px gap above red) */
+            ap[0].x = -2;  ap[0].y = 14;
+            ap[1].x = 386; ap[1].y = 14;
+            ap[2].x = -2;  ap[2].y = 15;
+            ap[3].x = 386; ap[3].y = 15;
+            acol[0].color = acol[1].color = acol[2].color = acol[3].color = 0xFFFFFFFF;
+            Renderer_Queue2DPrimitive((f32*)ap, PrioBase[67], (uintptr_t)acol[0].color, 0);
+
+            /* White bottom border (1px, 1px gap below red) */
+            ap[0].y = 41;  ap[1].y = 41;
+            ap[2].y = 42;  ap[3].y = 42;
+            Renderer_Queue2DPrimitive((f32*)ap, PrioBase[67], (uintptr_t)acol[0].color, 0);
+        }
 
         /* Handle cursor movement (6 items: 0..5) */
         if (MC_Move_Sub(Check_Menu_Lever(0, 0), 0, 5, 0xFF) == 0) {
