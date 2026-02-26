@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 
+// Defined in cli_parser.c; default 50000, overridable via --port.
+extern unsigned short g_netplay_port;
+
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -119,11 +122,12 @@ void Discovery_Update() {
         bool auto_now = Config_GetBool(CFG_KEY_NETPLAY_AUTO_CONNECT);
         snprintf(beacon_data,
                  sizeof(beacon_data),
-                 "3SX_LOBBY|%u|%d|%d|%u",
+                 "3SX_LOBBY|%u|%d|%d|%u|%hu",
                  local_instance_id,
                  auto_now ? 1 : 0,
                  local_ready ? 1 : 0,
-                 local_challenge_target);
+                 local_challenge_target,
+                 g_netplay_port);
 
         sendto(broadcast_sock,
                beacon_data,
@@ -154,7 +158,8 @@ void Discovery_Update() {
             int peer_auto = 0;
             int peer_rdy = 0;
             unsigned int peer_challenge = 0;
-            if (sscanf(buffer, "3SX_LOBBY|%u|%d|%d|%u", &peer_instance_id, &peer_auto, &peer_rdy, &peer_challenge) >=
+            unsigned short peer_port = 50000; // fallback for old beacons
+            if (sscanf(buffer, "3SX_LOBBY|%u|%d|%d|%u|%hu", &peer_instance_id, &peer_auto, &peer_rdy, &peer_challenge, &peer_port) >=
                 1) {
                 // Ignore our own broadcast
                 if (peer_instance_id != local_instance_id) {
@@ -165,6 +170,7 @@ void Discovery_Update() {
                     for (int i = 0; i < num_peers; i++) {
                         if (peers[i].instance_id == peer_instance_id) {
                             strcpy(peers[i].ip, ip_str); // Update IP in case it changed
+                            peers[i].port = peer_port;
                             peers[i].last_seen_ticks = now;
                             peers[i].wants_auto_connect = (peer_auto == 1);
                             peers[i].peer_ready = (peer_rdy == 1);
@@ -181,7 +187,7 @@ void Discovery_Update() {
                         p->peer_ready = (peer_rdy == 1);
                         p->is_challenging_me = (peer_challenge == local_instance_id);
                         snprintf(p->name, sizeof(p->name), "%s", ip_str);
-                        p->port = 50000;
+                        p->port = peer_port;
                         p->last_seen_ticks = now;
                     }
                 }

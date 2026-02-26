@@ -173,8 +173,14 @@ def find_injection_start(frames, combat_start_idx):
 
 
 def wait_for_frame_advance(state, timeout=2.0):
-    """Block until frame_count changes. Returns new frame_count or -1 on timeout."""
+    """Request a step and wait for frame_count to change.
+
+    Sets step_requested=1 so the C-side StepGate releases one frame,
+    then waits for frame_count to change as confirmation.
+    Returns new frame_count or -1 on timeout.
+    """
     old = state.frame_count
+    state.step_requested = 1
     deadline = time.time() + timeout
     while time.time() < deadline:
         if state.frame_count != old:
@@ -216,11 +222,13 @@ def wait_for_banner_sync(state, round_num, timeout=30.0):
     state.p2_input = 0
 
     # Phase 1: Wait for FIGHT banner to start (C_No[0]==1, C_No[1]==4)
+    # Use step_requested to keep game advancing frame-by-frame
     print("  Waiting for FIGHT banner (C_No[0]==1, C_No[1]==4)...")
     deadline = time.time() + timeout
     while time.time() < deadline:
         if state.nav_C_No[0] == 1 and state.nav_C_No[1] == 4:
             break
+        state.step_requested = 1
         time.sleep(0.001)
     else:
         print(
@@ -234,12 +242,13 @@ def wait_for_banner_sync(state, round_num, timeout=30.0):
     target_fc = detect_fc + frames_to_skip
     print(f"  FIGHT banner detected at fc={detect_fc}, target fc={target_fc}")
 
-    # Phase 2: Wait for frame_count to reach target (absolute comparison avoids off-by-one)
+    # Phase 2: Step frame-by-frame until frame_count reaches target
     deadline = time.time() + 10.0
     while time.time() < deadline:
         current_fc = state.frame_count
         if current_fc >= target_fc:
             break
+        state.step_requested = 1
         time.sleep(0.0005)
     else:
         print(
@@ -415,6 +424,11 @@ def run_replay(csv_path: Path, skip_menu: bool = False):
     else:
         print("--skip-menu: Assuming game is approaching round start")
 
+    # Enable step-driven sync and P2 input injection
+    state.step_mode_active = 1
+    state.selfplay_active = 1
+    print("Step mode ENABLED (frame-by-frame sync)")
+
     # --- Find round end boundaries (is_in_match 1->0 transitions) ---
     round_ends = []
     for r_idx, rs in enumerate(round_starts):
@@ -499,21 +513,26 @@ def run_replay(csv_path: Path, skip_menu: bool = False):
             print(f"\nWaiting for Round {round_num + 1}...")
 
             # Wait for allow_battle to go to 0 (game's round ended)
+            # Use step_requested to keep game advancing
             deadline = time.time() + 30.0
             while time.time() < deadline and state.allow_battle == 1:
-                time.sleep(0.05)
+                state.step_requested = 1
+                time.sleep(0.01)
 
             print("  Game round ended (allow_battle=0)")
             # Next iteration's wait_for_banner_sync handles the rest
+
+    # Cleanup: disable step mode and restore free-running
+    state.step_mode_active = 0
+    state.selfplay_active = 0
+    state.menu_input_active = 0
+    state.p1_input = 0
+    state.p2_input = 0
 
     # Summary
     print("\n=== REPLAY COMPLETE ===")
     print(f"  Rounds: {len(round_starts)}")
     print(f"  Total frames injected: {total_injected}")
-
-    state.menu_input_active = 0
-    state.p1_input = 0
-    state.p2_input = 0
 
 
 def main():

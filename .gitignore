@@ -53,3 +53,6 @@ sf3_3rd_trial_lua_20220613.zip
 tools/lobby-server/.env
 /stages
 /submodules
+*.csv
+/tools/fightcade_replays/output
+/fightcade-fbneo

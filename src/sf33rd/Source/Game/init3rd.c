@@ -201,14 +201,23 @@ void Init_Task_2nd(struct _TASK* task_ptr) {
  * @brief Final init sub-step — launches the main game.
  *
  * Creates Game_Task, Entry_Task, and Debug_Task, then exits Init_Task.
+ * If --font-test was passed, launches FontTest_Task instead.
  */
 void Init_Task_End(struct _TASK* task_ptr) {
-    cpReadyTask(TASK_GAME, Game_Task);
-    task_ptr->r_no[0] += 1;
-    task_ptr->r_no[1] = 0;
-    G_No[0] = 1;
-    cpReadyTask(TASK_ENTRY, Entry_Task);
-    cpReadyTask(TASK_DEBUG, Debug_Task);
+    extern bool g_font_test_mode;
+
+    if (g_font_test_mode) {
+        extern void FontTest_Task(struct _TASK*);
+        cpReadyTask(TASK_GAME, FontTest_Task);
+    } else {
+        cpReadyTask(TASK_GAME, Game_Task);
+        task_ptr->r_no[0] += 1;
+        task_ptr->r_no[1] = 0;
+        G_No[0] = 1;
+        cpReadyTask(TASK_ENTRY, Entry_Task);
+        cpReadyTask(TASK_DEBUG, Debug_Task);
+    }
+
     cpExitTask(TASK_INIT);
     Forbid_Reset = 0;
 }

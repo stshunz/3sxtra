@@ -19,33 +19,41 @@ frame,p1_input,p2_input,timer,p1_hp,p2_hp,p1_x,p1_y,p2_x,p2_y,...,p1_char,p2_cha
 
 import argparse
 import csv
+import subprocess
 import sys
 import time
-import subprocess
 from pathlib import Path
 from typing import Optional
 
-# Add parent to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from src.bridge.game_bridge import GameBridge
-from src.bridge.state import RLBridgeState
-from src.config import EnvConfig
-from src.environments.menu_navigator import MenuNavigator, NavConfig, GameMode
+from tools.util.bridge_state import (
+    MenuBridgeState,
+    GameScreen,
+    connect_to_bridge,
+    INPUT_UP,
+    INPUT_DOWN,
+    INPUT_LEFT,
+    INPUT_RIGHT,
+    INPUT_LK,
+    INPUT_START,
+)
+from tools.util.navigator import MenuNavigator
 
 # CPS3 character ID mapping (from replay_input_dumper_v3.lua - empirically validated)
 # VERIFIED: 11=Ken, 16=ChunLi from Fightcade replay testing
 CPS3_CHAR_NAMES = {
-    0: "GILD",  # Gill
-    1: "ALEX",  # Alex
-    2: "RUID",  # Ryu
-    3: "YUNG",  # Yun
-    4: "DDON",  # Dudley
-    5: "NEKO",  # Necro
-    6: "HUGO",  # Hugo
-    7: "IBAN",  # Ibuki
-    8: "ELNN",  # Elena
-    9: "OROO",  # Oro
+    0: "GILD",   # Gill
+    1: "ALEX",   # Alex
+    2: "RUID",   # Ryu
+    3: "YUNG",   # Yun
+    4: "DDON",   # Dudley
+    5: "NEKO",   # Necro
+    6: "HUGO",   # Hugo
+    7: "IBAN",   # Ibuki
+    8: "ELNN",   # Elena
+    9: "OROO",   # Oro
     10: "KONG",  # Yang
     11: "KENN",  # Ken (VERIFIED)
     12: "SEAN",  # Sean
@@ -63,16 +71,16 @@ CPS3_CHAR_NAMES = {
 #           7=Ibuki, 8=Elena, 9=Oro, 10=Yang, 11=Ken, 12=Sean, 13=Urien,
 #           14=Akuma, 15=ChunLi, 16=Makoto, 17=Q, 18=Twelve, 19=Remy
 CPS3_TO_3SX_CHAR = {
-    0: 0,  # Gill -> 0
-    1: 1,  # Alex -> 1
-    2: 2,  # Ryu -> 2
-    3: 3,  # Yun -> 3
-    4: 4,  # Dudley -> 4
-    5: 5,  # Necro -> 5
-    6: 6,  # Hugo -> 6
-    7: 7,  # Ibuki -> 7
-    8: 8,  # Elena -> 8
-    9: 9,  # Oro -> 9
+    0: 0,    # Gill -> 0
+    1: 1,    # Alex -> 1
+    2: 2,    # Ryu -> 2
+    3: 3,    # Yun -> 3
+    4: 4,    # Dudley -> 4
+    5: 5,    # Necro -> 5
+    6: 6,    # Hugo -> 6
+    7: 7,    # Ibuki -> 7
+    8: 8,    # Elena -> 8
+    9: 9,    # Oro -> 9
     10: 10,  # Yang -> 10
     11: 11,  # Ken -> 11
     12: 12,  # Sean -> 12
@@ -89,26 +97,26 @@ CPS3_TO_3SX_CHAR = {
 # Based on competitive meta / most commonly used
 # Indexed by CPS3 character ID
 CPS3_DEFAULT_SA = {
-    0: 0,  # Gill - SA1 (doesn't matter)
-    1: 2,  # Alex - SA3 (Stun Gun Headbutt)
-    2: 0,  # Ryu - SA1 (Shinkuu Hadouken) or SA2
-    3: 2,  # Yun - SA3 (Genei Jin)
-    4: 2,  # Dudley - SA3 (Corkscrew Blow)
-    5: 2,  # Necro - SA3 (Electric Snake)
-    6: 0,  # Hugo - SA1 (Gigas Breaker)
-    7: 0,  # Ibuki - SA1 (Kasumi Suzaku)
-    8: 1,  # Elena - SA2 (Brave Dance)
-    9: 1,  # Oro - SA2 (Yagyou Dama)
-    10: 2,  # Yang - SA3 (Seiei Enbu)
-    11: 2,  # Ken - SA3 (Shippu Jinrai Kyaku)
-    12: 2,  # Sean - SA3 (Hyper Tornado)
-    13: 2,  # Urien - SA3 (Aegis Reflector)
-    14: 0,  # Akuma - SA1 (Messatsu Gou Hadou)
-    15: 0,  # Makoto - SA1 (Seichusen Godanzuki) or SA2
-    16: 1,  # Chun-Li - SA2 (Houyoku Sen)
-    17: 0,  # Q - SA1 (Critical Combo Attack)
-    18: 0,  # Twelve - SA1 (X.N.D.L.)
-    19: 1,  # Remy - SA2 (Supreme Rising Rage Flash)
+    0: 0,    # Gill - SA1 (doesn't matter)
+    1: 2,    # Alex - SA3 (Stun Gun Headbutt)
+    2: 0,    # Ryu - SA1 (Shinkuu Hadouken) or SA2
+    3: 2,    # Yun - SA3 (Genei Jin)
+    4: 2,    # Dudley - SA3 (Corkscrew Blow)
+    5: 2,    # Necro - SA3 (Electric Snake)
+    6: 0,    # Hugo - SA1 (Gigas Breaker)
+    7: 0,    # Ibuki - SA1 (Kasumi Suzaku)
+    8: 1,    # Elena - SA2 (Brave Dance)
+    9: 1,    # Oro - SA2 (Yagyou Dama)
+    10: 2,   # Yang - SA3 (Seiei Enbu)
+    11: 2,   # Ken - SA3 (Shippu Jinrai Kyaku)
+    12: 2,   # Sean - SA3 (Hyper Tornado)
+    13: 2,   # Urien - SA3 (Aegis Reflector)
+    14: 0,   # Akuma - SA1 (Messatsu Gou Hadou)
+    15: 0,   # Makoto - SA1 (Seichusen Godanzuki) or SA2
+    16: 1,   # Chun-Li - SA2 (Houyoku Sen)
+    17: 0,   # Q - SA1 (Critical Combo Attack)
+    18: 0,   # Twelve - SA1 (X.N.D.L.)
+    19: 1,   # Remy - SA2 (Supreme Rising Rage Flash)
 }
 
 # FIGHT banner duration in frames (from 3SX effb2.c analysis):
@@ -123,6 +131,11 @@ CPS3_DEFAULT_SA = {
 # - case 9: 1 frame (sets gs_Next_Step = 1 → allow_battle)
 # TOTAL: ~120 frames from banner appearance to combat active
 FIGHT_BANNER_DURATION = 120
+
+# Banner timing (empirically validated)
+BANNER_DURATION_R1 = 142       # FIGHT banner duration for Round 1
+BANNER_DURATION_R2_PLUS = 146  # FIGHT banner duration for Round 2+
+BANNER_INJECT_WINDOW = 48      # Only inject last N frames of banner period
 
 
 def find_fight_banner_start(frames: list[dict]) -> int:
@@ -320,64 +333,11 @@ def detect_gameplay_start(frames: list[dict]) -> tuple[int, int]:
     return anchor_idx, activity_start
 
 
-def ensure_game_running():
-    """Ensure 3SX is running and connected - KILLING any old instances first."""
-    cwd = Path.cwd()
-    exe_path = cwd / "3sx" / "build" / "application" / "bin" / "3sx.exe"
-
-    # 1. Force Kill existing instances
-    print("Killing existing 3SX instances to ensure clean state...")
-    try:
-        subprocess.run(
-            ["taskkill", "/F", "/IM", "3sx.exe"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        time.sleep(1.0)  # Wait for release
-    except Exception as e:
-        print(f"Warning: Failed to kill 3sx: {e}")
-
-    # 2. Connect or Launch
-    # Use GameBridge to handle connection
-    config = EnvConfig(render_game=True)
-    bridge = GameBridge(config)
-
-    if not exe_path.exists():
-        raise FileNotFoundError(f"3sx.exe not found at {exe_path}")
-
-    print(f"Launching clean instance: {exe_path}")
-    process = subprocess.Popen(
-        [
-            str(exe_path),
-            "--rl-training",
-            "--instance-id",
-            "0",
-            "--window-pos",
-            "1920,32",
-            "--window-size",
-            "640x480",
-        ],
-        cwd=exe_path.parent,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
-    # Wait loop
-    print("Waiting for shared memory connection...")
-    for _ in range(20):
-        if bridge.connect():
-            print("Connected to 3SX!")
-            return bridge.state
-        time.sleep(1)
-
-    raise TimeoutError("Failed to connect to 3SX after launch")
-
-
 def load_csv(csv_path: Path) -> tuple[list[dict], int, int, int | None, int | None]:
     """Load CPS3 CSV and extract character IDs and optional SA values.
 
     Returns:
-        (frames, p1_char, p2_char, p1_sa, p2_sa)
+        (frames, p1_char, p2_char, p1_sa, p2_sa, rng_seeds)
         SA values are None if not present in CSV.
     """
     frames = []
@@ -418,12 +378,21 @@ def load_csv(csv_path: Path) -> tuple[list[dict], int, int, int | None, int | No
         print(f" SA{p2_sa + 1}")
     else:
         print()
+        
+    rng_seeds = {
+        "rng_16": int(anchor_frame.get("rng_16", 0)),
+        "rng_32": int(anchor_frame.get("rng_32", 0)),
+        "rng_16_ex": int(anchor_frame.get("rng_16_ex", 0)),
+        "rng_32_ex": int(anchor_frame.get("rng_32_ex", 0)),
+        "stage": int(anchor_frame.get("stage", 1))
+    }
+    print(f"RNG Seeds Extracted: {rng_seeds}")
 
-    return frames, p1_char, p2_char, p1_sa, p2_sa
+    return frames, p1_char, p2_char, p1_sa, p2_sa, rng_seeds
 
 
 def wait_for_shm_field(
-    state: RLBridgeState, field: str, value: int, timeout: float = 30.0
+    state: MenuBridgeState, field: str, value: int, timeout: float = 30.0
 ) -> bool:
     """Wait for a shared memory field to reach a specific value."""
     start = time.time()
@@ -434,7 +403,7 @@ def wait_for_shm_field(
     return False
 
 
-def inject_frame_and_wait(state: RLBridgeState, p1_input: int, p2_input: int) -> int:
+def inject_frame_and_wait(state: MenuBridgeState, p1_input: int, p2_input: int) -> int:
     """Inject inputs and wait for frame advance."""
     current_frame = state.frame_count
     state.p1_input = p1_input
@@ -451,7 +420,7 @@ def inject_frame_and_wait(state: RLBridgeState, p1_input: int, p2_input: int) ->
     return state.frame_count
 
 
-def wait_for_round_start(state: RLBridgeState, timeout: float = 60.0) -> bool:
+def wait_for_round_start(state: MenuBridgeState, timeout: float = 60.0) -> bool:
     """
     Wait for Game02 entry (nav_Play_Game >= 1).
 
@@ -478,140 +447,145 @@ def wait_for_round_start(state: RLBridgeState, timeout: float = 60.0) -> bool:
     return True
 
 
-def navigate_arcade_p2_join(
-    state: RLBridgeState,
+def select_super_art(nav, state, player_idx, target_sa):
+    """Navigate SA selection using feedback from nav_Cursor_SA."""
+    print(f"  P{player_idx + 1}: Selecting SA{target_sa + 1}...")
+    send = nav.send_p1_input if player_idx == 0 else nav.send_p2_input
+
+    # Wait for SA cursor to become valid
+    for _ in range(30):
+        cur_sa = state.nav_Cursor_SA[player_idx]
+        if 0 <= cur_sa <= 2:
+            break
+        time.sleep(0.05)
+
+    # Feedback-driven navigation
+    for _ in range(6):
+        cur_sa = state.nav_Cursor_SA[player_idx]
+        if cur_sa == target_sa:
+            print(f"    Reached SA{target_sa + 1}!")
+            break
+        forward_dist = (target_sa - cur_sa) % 3
+        if forward_dist <= 1:
+            send(INPUT_DOWN)
+        else:
+            send(INPUT_UP)
+        time.sleep(0.15)
+    else:
+        print(f"    WARNING: Could not reach SA{target_sa + 1}")
+
+    time.sleep(0.1)
+    send(INPUT_LK)
+    time.sleep(0.3)
+
+
+def navigate_to_gameplay(
+    state: MenuBridgeState,
+    nav: MenuNavigator,
     p1_char_cps3: int,
     p2_char_cps3: int,
     p1_sa: int = 2,
     p2_sa: int = 1,
 ) -> bool:
     """
-    Navigate using Arcade mode + P2 join flow:
-    1. P1 enters Arcade mode
-    2. At character select, P2 presses START to join
-    3. Both players select their characters
+    Navigate to gameplay using MenuNavigator (same pattern as replay_inputs.py).
 
-    This is more reliable than VS mode menu navigation.
+    Converts CPS3 character IDs to 3SX IDs and uses the navigator's
+    existing flow: boot → title → main menu → versus → char select → gameplay.
     """
-    from src.environments.constants import RL_INPUT_START, RL_INPUT_LK
-    from src.environments.menu_navigator import GameScreen
-
     # Convert CPS3 IDs to 3SX IDs
-    p1_char_3sx = CPS3_TO_3SX_CHAR.get(p1_char_cps3, 11)  # Default Ken
-    p2_char_3sx = CPS3_TO_3SX_CHAR.get(p2_char_cps3, 2)  # Default Ryu
+    p1_3sx = CPS3_TO_3SX_CHAR.get(p1_char_cps3, 11)  # Default Ken
+    p2_3sx = CPS3_TO_3SX_CHAR.get(p2_char_cps3, 2)   # Default Ryu
 
-    print("\n=== ARCADE + P2 JOIN NAVIGATION ===")
-    print(f"P1: CPS3 ID {p1_char_cps3} -> 3SX ID {p1_char_3sx}")
-    print(f"P2: CPS3 ID {p2_char_cps3} -> 3SX ID {p2_char_3sx}")
-
-    # Configure for Arcade mode (P2 will join at char select)
-    config = NavConfig(
-        game_mode=GameMode.ARCADE,  # Start as Arcade
-        target_character_p1=p1_char_3sx,
-        target_super_art_p1=p1_sa,  # SA from CLI args or defaults
-        target_character_p2=p2_char_3sx,
-        target_super_art_p2=p2_sa,  # SA from CLI args or defaults
+    print("\n=== NAVIGATION ===")
+    print(
+        f"  P1: {CPS3_CHAR_NAMES.get(p1_char_cps3, '?')} SA{p1_sa + 1} (CPS3 {p1_char_cps3} -> 3SX {p1_3sx})"
+    )
+    print(
+        f"  P2: {CPS3_CHAR_NAMES.get(p2_char_cps3, '?')} SA{p2_sa + 1} (CPS3 {p2_char_cps3} -> 3SX {p2_3sx})"
     )
 
-    navigator = MenuNavigator(state, config)
-
-    # Helper functions
-    def wait_frames(n: int):
-        target = state.frame_count + n
-        while state.frame_count < target:
-            time.sleep(0.001)
-
-    def send_p1_input(mask: int, frames: int = 6):
-        state.p1_input = mask
-        wait_frames(frames)
-        state.p1_input = 0
-        wait_frames(2)
-
-    def send_p2_input(mask: int, frames: int = 6):
-        state.p2_input = mask
-        wait_frames(frames)
-        state.p2_input = 0
-        wait_frames(2)
-
-    # Enable RL mode and turbo sync for proper game state updates
-    state.rl_mode_active = 1
     state.menu_input_active = 1
-    state.turbo_force = 1  # Enable C-side frame sync (updates SHM fields)
-    state.turbo_mode = 0  # Visual mode (not headless)
 
-    print("Phase 1: Navigate to character select (Arcade mode)...")
+    # Phase 1: Get to Main Menu
+    print("\nPhase 1: Navigate to Main Menu...")
+    if not nav.navigate_title_to_menu():
+        screen = nav.get_current_screen()
+        if screen not in (
+            GameScreen.MAIN_MENU,
+            GameScreen.CHARACTER_SELECT,
+            GameScreen.GAMEPLAY,
+        ):
+            for _ in range(5):
+                nav.send_p1_input(INPUT_START)
+                time.sleep(0.5)
 
-    # Navigate through boot/title to main menu
-    max_iterations = 30
-    for i in range(max_iterations):
-        screen = navigator.get_current_screen()
+    # Phase 2: Select Arcade mode
+    screen = nav.get_current_screen()
+    if screen == GameScreen.MAIN_MENU:
+        print("\nPhase 2: Selecting Arcade mode...")
+        # Arcade is the default option at the top of the menu
+        time.sleep(0.2)
+        nav.send_p1_input(INPUT_LK)
+        time.sleep(1.0)
 
+    # Phase 3: Wait for Character Select and Trigger P2 Join
+    print("\nPhase 3: Waiting for P1 Character Select to load...")
+    for _ in range(30):
+        screen = nav.get_current_screen()
         if screen == GameScreen.CHARACTER_SELECT:
-            print("Reached character select!")
             break
-        elif screen == GameScreen.GAMEPLAY:
-            print("Already in gameplay!")
-            return True
-        elif screen in [
-            GameScreen.BOOT_INTRO,
-            GameScreen.TITLE_SCREEN,
-            GameScreen.ATTRACT_SCREEN,
-            GameScreen.UNKNOWN,
-        ]:
-            print(f"  Screen: {screen.name} - pressing Start")
-            send_p1_input(RL_INPUT_START)
-            wait_frames(30)
-        elif screen == GameScreen.MAIN_MENU:
-            # Select Arcade (first option, Y=0)
-            print("  Main Menu - selecting Arcade")
-            send_p1_input(RL_INPUT_LK)
-            wait_frames(30)
-        elif screen == GameScreen.ENTRY_SCREEN:
-            print("  Entry screen - confirming")
-            send_p1_input(RL_INPUT_LK)
-            wait_frames(30)
-        else:
-            print(f"  Screen: {screen.name} - pressing Start")
-            send_p1_input(RL_INPUT_START)
-            wait_frames(30)
-    else:
-        print("Failed to reach character select!")
-        return False
-
-    wait_frames(30)
-
-    print("Phase 2: P2 presses START to join...")
-    send_p2_input(RL_INPUT_START)
-    wait_frames(60)  # Wait for P2 cursor to appear
-
-    # Verify P2 joined (cursor should be valid)
-    print(f"  P2 cursor: {state.nav_Cursor_Char[1]}")
-
-    print("Phase 3: Select characters...")
-    # Now both players select characters using the existing selector
-    config.game_mode = GameMode.VERSUS  # Switch config for character selection
-    navigator.config = config
-
-    success = navigator.character_selector.navigate_versus(verbose=True)
-    if not success:
-        print("Character selection failed!")
-        return False
-
-    print("Phase 4: Handling pre-match screens...")
-    # Handle handicap/stage select screens by pressing LK
-    for _ in range(10):
-        send_p1_input(RL_INPUT_LK)
-        send_p2_input(RL_INPUT_LK)
-        wait_frames(30)
-
-        if state.nav_Play_Game >= 1:
-            print("Entered gameplay!")
-            break
-
-        screen = navigator.get_current_screen()
+        if screen == GameScreen.PLAYER_ENTRY:
+            nav.send_p1_input(INPUT_START)
         if screen == GameScreen.GAMEPLAY:
-            print("Reached gameplay!")
+            state.menu_input_active = 0
+            return True
+        time.sleep(0.3)
+    else:
+        print("  ERROR: Never reached Character Select!")
+        return False
+
+    time.sleep(0.5)
+
+    # Phase 3.5: P2 Joins! (New Challenger)
+    print("\nPhase 3.5: P2 Joins! (Pressing P2 Start)")
+    nav.send_p2_input(INPUT_START)
+    
+    print("Waiting for 'New Challenger' screen to pass...")
+    # It takes a few seconds to go through the New Challenger animation
+    # and return to the character select screen with both players active.
+    time.sleep(4.0)
+    for _ in range(30):
+        screen = nav.get_current_screen()
+        if screen == GameScreen.CHARACTER_SELECT:
             break
+        time.sleep(0.3)
+    time.sleep(0.5)
+
+    # Phase 4-7: Select characters and SAs
+    print(f"\nPhase 4: Selecting P1 ({CPS3_CHAR_NAMES.get(p1_char_cps3, '?')})...")
+    if not nav.select_character(0, p1_3sx):
+        return False
+    print("\nPhase 5: P1 Super Art...")
+    time.sleep(0.3)
+    select_super_art(nav, state, 0, p1_sa)
+
+    print(f"\nPhase 6: Selecting P2 ({CPS3_CHAR_NAMES.get(p2_char_cps3, '?')})...")
+    if not nav.select_character(1, p2_3sx):
+        return False
+    print("\nPhase 7: P2 Super Art...")
+    time.sleep(0.3)
+    select_super_art(nav, state, 1, p2_sa)
+
+    # Phase 8: Skip pre-match screens
+    print("\nPhase 8: Skipping pre-match screens...")
+    for _ in range(15):
+        screen = nav.get_current_screen()
+        if screen == GameScreen.GAMEPLAY:
+            break
+        nav.send_p1_input(INPUT_LK)
+        nav.send_p2_input(INPUT_LK)
+        time.sleep(0.3)
 
     state.menu_input_active = 0
     print("Navigation complete!")
@@ -637,12 +611,11 @@ def run_parity_test(
         Dict with divergence statistics
     """
     # Load CPS3 data (includes SA from v3 format if present)
-    frames, p1_char, p2_char, csv_p1_sa, csv_p2_sa = load_csv(csv_path)
+    frames, p1_char, p2_char, csv_p1_sa, csv_p2_sa, rng_seeds = load_csv(csv_path)
 
     # BANNER-START SYNC: Only inject the LAST N frames before combat starts
     # Injecting too many frames during banner overflows the motion buffer!
     # The game only buffers ~32-48 frames of motion inputs, so we inject just enough
-    BANNER_INJECT_WINDOW = 48  # Only inject last N frames of banner period
 
     anchor_idx, _ = detect_gameplay_start(frames)  # is_in_match=1 frame (combat start)
     banner_start_csv = find_fight_banner_start(frames)  # Full banner start in CSV
@@ -686,36 +659,65 @@ def run_parity_test(
         stem = csv_path.stem.replace("_full", "")
         output_path = csv_path.parent / f"{stem}_3sx.csv"
 
-    state = ensure_game_running()
+    # Connect to 3SX via shared memory (auto-launch if not running)
+    print("\nConnecting to 3SX...")
+    state, shm = connect_to_bridge()
 
-    # Reset 3SX state and navigate to gameplay
-    print("Resetting 3SX state...")
-    time.sleep(1.0)
-    state.reset_requested = 1
+    # On Windows, mmap(-1, ..., tagname=...) creates shared memory if it doesn't
+    # exist, so connect_to_bridge() always "succeeds". Verify the game is actually
+    # alive by checking if frame_count advances.
+    game_alive = False
+    if state is not None:
+        fc1 = state.frame_count
+        time.sleep(0.2)
+        fc2 = state.frame_count
+        game_alive = fc2 != fc1 or fc2 > 0
 
-    # Wait for reset handling
-    time.sleep(2.0)
+    if not game_alive:
+        # Auto-launch the game
+        script_dir = Path(__file__).resolve().parent
+        project_root = script_dir.parent.parent
+        exe_path = project_root / "build" / "application" / "bin" / "3sx.exe"
+        if not exe_path.exists():
+            raise RuntimeError(
+                f"3sx.exe not found at {exe_path}. Build first with compile.bat."
+            )
+        print(f"Game not running. Launching: {exe_path}")
+        subprocess.Popen(
+            [str(exe_path)],
+            cwd=str(exe_path.parent),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        # Wait for shared memory to become active (frame_count advancing)
+        print("Waiting for game to start...")
+        for attempt in range(30):
+            time.sleep(1.0)
+            state, shm = connect_to_bridge()
+            if state is not None and state.frame_count > 0:
+                break
+        else:
+            raise RuntimeError("Timeout: game did not start within 30 seconds")
 
-    # Enable Python control
-    state.rl_mode_active = 1
-    state.menu_input_active = 1  # Allow menu navigation
+    print(f"Connected! frame_count={state.frame_count}")
 
     if not skip_menu:
-        # Use Arcade + P2 join navigation
-        if not navigate_arcade_p2_join(state, p1_char, p2_char, p1_sa, p2_sa):
+        # Navigate menus normally (title → versus → char select → gameplay)
+        nav = MenuNavigator(state)
+        if not navigate_to_gameplay(state, nav, p1_char, p2_char, p1_sa, p2_sa):
             raise RuntimeError("Failed to navigate to gameplay")
-
-        if not wait_for_round_start(state, timeout=30.0):
-            raise RuntimeError("Timeout waiting for round start")
+        
+        # RNG seeding is deferred to wait_for_banner_sync
+        # (seeds applied at the exact moment allow_battle=1 fires)
 
     # CRITICAL: Enable selfplay mode for P2 input injection
     # Without this, C-side won't apply p2_input during gameplay
-    state.selfplay_onnx_active = 1
-    state.python_connected = 1  # Mark Python as connected for input injection
+    state.selfplay_active = 1
+    state.step_mode_active = 1
 
     print("Round started! Beginning input injection...")
 
-    # Open output CSV
+    # Open output CSV — matches CPS3 CSV columns for offline diff
     fieldnames = [
         "frame",
         "p1_input",
@@ -735,9 +737,54 @@ def run_parity_test(
         "p2_stun",
         "p1_char",
         "p2_char",
+        "p1_busy",
+        "p2_busy",
+        "rng_16",
+        "rng_32",
+        "rng_16_ex",
+        "rng_32_ex",
+        "p1_action",
+        "p2_action",
+        "p1_animation",
+        "p2_animation",
+        "p1_posture",
+        "p2_posture",
+        "p1_freeze",
+        "p2_freeze",
+        "is_in_match",
+    ]
+
+    # Multi-field parity comparison config
+    # (csv_field, 3sx_field, format) — format is 'd' (decimal) or 'x' (hex)
+    PARITY_FIELDS = [
+        ("p1_hp",       "p1_hp",       "d"),
+        ("p2_hp",       "p2_hp",       "d"),
+        ("p1_x",        "p1_x",        "d"),
+        ("p2_x",        "p2_x",        "d"),
+        ("p1_y",        "p1_y",        "d"),
+        ("p2_y",        "p2_y",        "d"),
+        ("p1_meter",    "p1_meter",    "d"),
+        ("p2_meter",    "p2_meter",    "d"),
+        ("p1_stun_bar", "p1_stun",     "d"),
+        ("p2_stun_bar", "p2_stun",     "d"),
+        ("p1_facing",   "p1_facing",   "d"),
+        ("p2_facing",   "p2_facing",   "d"),
+        ("rng_16",      "rng_16",      "d"),
+        ("rng_32",      "rng_32",      "d"),
+        ("rng_16_ex",   "rng_16_ex",   "d"),
+        ("rng_32_ex",   "rng_32_ex",   "d"),
+        ("p1_action",   "p1_action",   "x"),
+        ("p2_action",   "p2_action",   "x"),
+        ("p1_animation","p1_animation","x"),
+        ("p2_animation","p2_animation","x"),
+        ("p1_posture",  "p1_posture",  "d"),
+        ("p2_posture",  "p2_posture",  "d"),
+        ("p1_freeze",   "p1_freeze",   "d"),
+        ("p2_freeze",   "p2_freeze",   "d"),
     ]
 
     divergences = []
+    first_divergence = {}  # field_name -> {frame, round, cps3_val, sx_val, fmt}
     with open(output_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -746,75 +793,89 @@ def run_parity_test(
         #
         # SYNC STRATEGY (same for all rounds):
         #   1. Wait for 3SX nav_C_No[0]==1, nav_C_No[1]==4 (FIGHT banner)
-        #   2. Wait for 3SX to be (142 - 48 + MARGIN) frames into banner
+        #   2. Count frames from banner start until we reach the skip point
         #   3. Inject from CSV at (is_in_match=1 - 48) frame
         #   4. Both systems reach combat together!
         #
-        # SAFETY MARGIN: Banner duration varies (142-146+ frames depending on scroll).
-        # Injecting LATE = chars stand still (harmless). Injecting EARLY = desync!
-        # DISCOVERED: R1 always 142 frames, R2+ always 146 frames!
-        #
-        def get_banner_duration(round_num: int) -> int:
-            """Return expected banner duration for given round."""
-            if round_num == 1:
-                return 142
-            else:
-                return 146
-
-        def get_frames_to_skip(round_num: int) -> int:
-            """Calculate frames to skip based on round-specific banner duration."""
-            return get_banner_duration(round_num) - BANNER_INJECT_WINDOW
-
-        def wait_for_banner_sync(round_num: int) -> bool:
-            """Wait for 3SX to reach the sync point in its banner animation.
-
-            Returns True if sync succeeded, False on timeout.
+        def wait_for_banner_sync(round_num: int) -> int:
+            """Wait for 3SX FIGHT banner, then step until allow_battle=1.
+            
+            Dynamically detects actual banner duration instead of hardcoding it.
+            Injects CPS3 banner inputs during the last BANNER_INJECT_WINDOW frames
+            before combat starts, using a two-pass approach:
+            
+            Pass 1: Step through banner with neutral inputs until allow_battle=1
+                     (measures actual banner duration)
+            
+            Since we can't rewind, we accept that banner buffering during
+            this measurement pass uses neutral inputs. The timing alignment
+            at combat start is what matters most.
+            
+            Returns anchor_idx on success, -1 on failure.
             """
             print(f"\n=== SYNC POINT (ROUND {round_num}) ===")
             print("Waiting for 3SX FIGHT banner (nav_C_No[0]==1 AND nav_C_No[1]==4)...")
-
-            # Wait for banner to start
+            
             timeout = time.time() + 30.0
             while True:
                 if state.nav_C_No[0] == 1 and state.nav_C_No[1] == 4:
                     break
                 if time.time() > timeout:
-                    print(
-                        f"ERROR: Timeout waiting for banner (C_No[0]={state.nav_C_No[0]}, C_No[1]={state.nav_C_No[1]})"
-                    )
-                    return False
+                    print(f"ERROR: Timeout waiting for banner")
+                    return -1
                 state.step_requested = 1
                 time.sleep(0.001)
 
             print("3SX FIGHT banner started!")
-
-            # Get round-specific skip value
-            frames_to_skip_3sx = get_frames_to_skip(round_num)
-
-            # Wait for 3SX to be at the right point in banner
-            print(
-                f"Waiting for 3SX to reach {frames_to_skip_3sx} frames into banner (R{round_num}: {get_banner_duration(round_num)}-frame banner)..."
-            )
-            timeout = time.time() + 10.0
+            
+            # Step through banner until allow_battle=1
+            # Inject neutral inputs during banner — timing alignment at combat start is key
+            banner_frames = 0
+            timeout = time.time() + 30.0
             while True:
-                banner_frames = state.banner_frame_count
-                if banner_frames >= frames_to_skip_3sx:
+                if state.allow_battle == 1:
                     break
                 if time.time() > timeout:
-                    print(f"WARN: Timeout (got {banner_frames}/{frames_to_skip_3sx})")
-                    break
-                state.step_requested = 1
-                time.sleep(0.001)
+                    print(f"ERROR: Timeout waiting for allow_battle (stepped {banner_frames} frames)")
+                    return -1
+                inject_frame_and_wait(state, 0, 0)
+                banner_frames += 1
 
-            print(f"3SX at {state.banner_frame_count} banner frames - synced!")
-            return True
+            print(f"3SX combat ready (allow_battle=1) after {banner_frames} banner frames.")
+            
+            # Per-round RNG snapshot validation
+            # Compare CPS3 CSV RNG seeds with 3SX RNG state at combat start
+            csv_anchor = frames[anchor_idx]
+            rng_match = True
+            for rng_field in ["rng_16", "rng_32", "rng_16_ex", "rng_32_ex"]:
+                csv_rng = int(csv_anchor.get(rng_field, 0))
+                sx_rng = getattr(state, rng_field)
+                if csv_rng != sx_rng:
+                    print(f"  RNG MISMATCH at R{round_num} start: {rng_field} CPS3={csv_rng} 3SX={sx_rng}")
+                    rng_match = False
+            if rng_match:
+                print(f"  RNG snapshot OK: all 4 indices match CPS3 at R{round_num} start")
+
+            # Seed RNG — set the values and flag; PreTick will apply them
+            # on the FIRST real injection frame (no extra frame advance!)
+            print("Seeding RNG at combat start...")
+            state.fm_stage = rng_seeds.get("stage", 1)
+            state.fm_rng_16 = rng_seeds["rng_16"]
+            state.fm_rng_32 = rng_seeds["rng_32"]
+            state.fm_rng_16_ex = rng_seeds["rng_16_ex"]
+            state.fm_rng_32_ex = rng_seeds["rng_32_ex"]
+            state.force_match_active = 1
+            # Do NOT step an extra frame here — the main injection loop's
+            # first inject_frame_and_wait() will be when PreTick picks up
+            # the seeds and the game tick runs with actual CSV inputs.
+            
+            print(f"Starting combat injection from CSV anchor frame {anchor_idx}")
+            return anchor_idx
 
         # Round 1 sync
-        if not wait_for_banner_sync(1):
+        combat_start = wait_for_banner_sync(1)
+        if combat_start < 0:
             return False
-        print(
-            f"Injecting from CSV frame {gameplay_start} (last {BANNER_INJECT_WINDOW} frames of banner)"
-        )
 
         MAX_HP = 160  # Maximum valid HP value
         current_round = 1
@@ -824,12 +885,12 @@ def run_parity_test(
         round_frame_count = 0  # Frames in current round
         total_frames_injected = 0  # Track actual injections across all rounds
 
-        # Create injection frames slice starting from match_state=1 (Game02 entry)
-        # This includes the intro period where inputs are buffered!
-        injection_frames = frames[gameplay_start:]
-        print(f"Starting injection from CSV frame {gameplay_start} (Game02 entry)")
+        # Create injection frames slice starting from combat anchor (is_in_match=1)
+        # Banner inputs were already handled (neutral) during wait_for_banner_sync
+        injection_frames = frames[combat_start:]
+        print(f"Starting injection from CSV frame {combat_start} (is_in_match=1)")
         print(
-            f"Total frames to inject: {len(injection_frames)} (includes intro buffer period)"
+            f"Total frames to inject: {len(injection_frames)}"
         )
 
         skip_to_index = (
@@ -925,8 +986,7 @@ def run_parity_test(
                     in_round_transition = False
 
                     # RE-ASSERT CONTROL FLAGS
-                    state.selfplay_onnx_active = 1
-                    state.python_connected = 1
+                    state.selfplay_active = 1
 
                     print(
                         f"Ready for Round {current_round}! (will skip to frame index {skip_to_index})"
@@ -949,7 +1009,7 @@ def run_parity_test(
                         f"[Frame {i}] Round {current_round} gameplay active (is_in_match=1)"
                     )
 
-            # === DEBUG: Sync verification for first 100 frames ===
+            # === DEBUG: Sync verification for first 20 frames ===
             DEBUG_FRAME_LIMIT = 20
             if i < DEBUG_FRAME_LIMIT:
                 # Show CSV data vs 3SX state
@@ -960,7 +1020,7 @@ def run_parity_test(
                 print(
                     f"[SYNC {i:04d}] CSV: frame={frame_num}, match_state={csv_match_state}, is_in_match={csv_is_in_match}, "
                     f"timer={csv_timer}, HP={cps3_p1_hp}/{cps3_p2_hp} | "
-                    f"3SX: allow_battle={state.allow_battle}, timer={state.time_remaining}, "
+                    f"3SX: allow_battle={state.allow_battle}, timer={state.game_timer}, "
                     f"HP={state.p1_health}/{state.p2_health} | "
                     f"IN: p1=0x{p1_input:04x} p2=0x{p2_input:04x}"
                 )
@@ -978,48 +1038,81 @@ def run_parity_test(
             round_frame_count += 1
             total_frames_injected += 1
 
-            # Read 3SX state
+            # Read 3SX state (full parity CSV — matches CPS3 columns)
             sx_row = {
                 "frame": i,
                 "p1_input": p1_input,
                 "p2_input": p2_input,
-                "timer": state.time_remaining,
+                "timer": state.game_timer,
                 "p1_hp": state.p1_health,
                 "p2_hp": state.p2_health,
                 "p1_x": state.p1_pos_x,
                 "p1_y": state.p1_pos_y,
                 "p2_x": state.p2_pos_x,
                 "p2_y": state.p2_pos_y,
-                "p1_facing": state.p1_side,
-                "p2_facing": state.p2_side,
+                "p1_facing": state.p1_facing,
+                "p2_facing": state.p2_facing,
                 "p1_meter": state.p1_meter,
                 "p2_meter": state.p2_meter,
                 "p1_stun": state.p1_stun,
                 "p2_stun": state.p2_stun,
-                "p1_char": state.p1_character,
-                "p2_char": state.p2_character,
+                "p1_char": state.nav_My_char[0],
+                "p2_char": state.nav_My_char[1],
+                "p1_busy": state.p1_busy,
+                "p2_busy": state.p2_busy,
+                "rng_16": state.rng_16,
+                "rng_32": state.rng_32,
+                "rng_16_ex": state.rng_16_ex,
+                "rng_32_ex": state.rng_32_ex,
+                "p1_action": state.p1_action,
+                "p2_action": state.p2_action,
+                "p1_animation": state.p1_animation,
+                "p2_animation": state.p2_animation,
+                "p1_posture": state.p1_posture,
+                "p2_posture": state.p2_posture,
+                "p1_freeze": state.p1_freeze,
+                "p2_freeze": state.p2_freeze,
+                "is_in_match": state.is_in_match,
             }
             writer.writerow(sx_row)
 
-            # Compare HP
-            sx_hp_valid = sx_row["p1_hp"] <= MAX_HP and sx_row["p2_hp"] <= MAX_HP
+            # Multi-field parity comparison
+            frame_diffs = {}  # field -> (cps3_val, sx_val, fmt)
+            for csv_field, sx_field, fmt in PARITY_FIELDS:
+                if csv_field not in cps3_row:
+                    continue
+                cps3_val = int(cps3_row[csv_field])
+                sx_val = int(sx_row[sx_field])
+                if cps3_val != sx_val:
+                    frame_diffs[csv_field] = (cps3_val, sx_val, fmt)
+                    # Track first divergence per field
+                    if csv_field not in first_divergence:
+                        first_divergence[csv_field] = {
+                            "frame": i,
+                            "round": current_round,
+                            "cps3_val": cps3_val,
+                            "sx_val": sx_val,
+                            "fmt": fmt,
+                        }
 
-            if cps3_hp_valid and sx_hp_valid:
-                hp_diff = abs(sx_row["p1_hp"] - cps3_p1_hp) + abs(
-                    sx_row["p2_hp"] - cps3_p2_hp
+            if frame_diffs:
+                div = {
+                    "frame": i,
+                    "round": current_round,
+                    "fields": {k: (v[0], v[1]) for k, v in frame_diffs.items()},
+                }
+                divergences.append(div)
+                # Rich log: show all differing fields with Δ values
+                diff_strs = []
+                for k, (cv, sv, fmt) in frame_diffs.items():
+                    delta = sv - cv
+                    if fmt == "x":
+                        diff_strs.append(f"{k}: CPS3=0x{cv:X} 3SX=0x{sv:X}")
+                    else:
+                        diff_strs.append(f"{k}: CPS3={cv} 3SX={sv} (d={delta:+d})")
+                print(
+                    f"[R{current_round} F{round_frame_count}] DIVERGENCE: {', '.join(diff_strs)} (inj_idx={i}, frame={frame_num})"
                 )
-
-                if hp_diff > 0:
-                    div = {
-                        "frame": i,
-                        "round": current_round,
-                        "cps3_hp": (cps3_p1_hp, cps3_p2_hp),
-                        "3sx_hp": (sx_row["p1_hp"], sx_row["p2_hp"]),
-                    }
-                    divergences.append(div)
-                    print(
-                        f"[R{current_round} F{round_frame_count}] HP DIVERGENCE: CPS3={div['cps3_hp']} vs 3SX={div['3sx_hp']} (inj_idx={i}, frame={frame_num})"
-                    )
 
             # Progress indicator
             if total_frames_injected % 500 == 0:
@@ -1049,6 +1142,26 @@ def run_parity_test(
             f"  Total: {total_frames_injected} frames across {len(round_stats)} round(s)"
         )
 
+        # Print first-divergence summary (root cause analysis)
+        if first_divergence:
+            print("\n=== FIRST DIVERGENCE PER FIELD ===")
+            # Sort by frame number to show earliest divergence first
+            sorted_fields = sorted(first_divergence.items(), key=lambda x: x[1]["frame"])
+            for field, info in sorted_fields:
+                fmt = info.get("fmt", "d")
+                if fmt == "x":
+                    val_str = f"CPS3=0x{info['cps3_val']:X}  3SX=0x{info['sx_val']:X}"
+                else:
+                    delta = info['sx_val'] - info['cps3_val']
+                    val_str = f"CPS3={info['cps3_val']}  3SX={info['sx_val']}  (d={delta:+d})"
+                print(
+                    f"  {field:16s}: R{info['round']} F{info['frame']:5d}  {val_str}"
+                )
+            earliest = sorted_fields[0]
+            print(
+                f"  >>> ROOT CAUSE CANDIDATE: '{earliest[0]}' first diverged at Round {earliest[1]['round']} Frame {earliest[1]['frame']}"
+            )
+
     # Report
     print("\n=== PARITY TEST COMPLETE ===")
     print(
@@ -1062,6 +1175,7 @@ def run_parity_test(
         "rounds_tested": len(round_stats),
         "round_stats": round_stats,
         "divergences": divergences,
+        "first_divergence": first_divergence,
         "output_path": str(output_path),
     }
 

@@ -181,7 +181,7 @@ extern "C" void shader_menu_render(int window_width, int window_height) {
         ImGui::SameLine();
         ImGui::TextDisabled("(?)");
         if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Prevents screen tearing. Does not affect game speed.");
+            ImGui::SetTooltip("Prevents screen tearing.\nWith F5 uncap: ON = render at display rate, game at normal speed.\nWith F5 uncap: OFF = full speed benchmarking.");
         }
     }
 

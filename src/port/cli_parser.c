@@ -20,6 +20,12 @@ extern int g_resolution_scale;
 extern const char* g_shm_suffix;
 extern float g_master_volume;
 
+// Font test mode — boots into a debug font visualization screen
+bool g_font_test_mode = false;
+
+// Netplay game port (default 50000). Set via --port to allow multiple local instances.
+unsigned short g_netplay_port = 50000;
+
 // These might need to be mocked in tests
 // void SDLApp_SetWindowPosition(int x, int y);
 // void SDLApp_SetWindowSize(int w, int h);
@@ -29,7 +35,7 @@ int SDL_atoi(const char* str);
  * @brief Parse command-line arguments and configure application state.
  *
  * Supports: --scale, --volume, --renderer, --enable-broadcast,
- * --window-pos, --window-size, --shm-suffix.
+ * --window-pos, --window-size, --shm-suffix, --port.
  */
 void ParseCLI(int argc, char* argv[]) {
     for (int i = 1; i < argc; i++) {
@@ -39,10 +45,12 @@ void ParseCLI(int argc, char* argv[]) {
             printf("  --scale <factor>          Internal resolution multiplier (default: 1)\n");
             printf("  --volume <0-100>          Master volume percentage (default: 100)\n");
             printf("  --renderer <gl|gpu|sdl>   Renderer backend (default: gl)\n");
+            printf("  --port <number>           Netplay game port (default: 50000)\n");
             printf("  --window-pos <x>,<y>      Initial window position\n");
             printf("  --window-size <w>x<h>     Initial window size\n");
             printf("  --enable-broadcast        Enable Spout/shared-memory broadcast\n");
             printf("  --shm-suffix <suffix>     Shared-memory name suffix for broadcast\n");
+            printf("  --font-test               Boot into font debug visualization screen\n");
             printf("  --help                    Show this help message\n");
             exit(0);
         } else if (strcmp(argv[i], "--volume") == 0 && i + 1 < argc) {
@@ -55,6 +63,12 @@ void ParseCLI(int argc, char* argv[]) {
             printf("[CLI] Master volume: %d%%\n", vol);
         } else if (strcmp(argv[i], "--scale") == 0 && i + 1 < argc) {
             g_resolution_scale = SDL_atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
+            int p = SDL_atoi(argv[++i]);
+            if (p > 0 && p <= 65535) {
+                g_netplay_port = (unsigned short)p;
+                printf("[CLI] Netplay port: %d\n", p);
+            }
         } else if (strcmp(argv[i], "--enable-broadcast") == 0) {
             broadcast_config.enabled = true;
         } else if (strcmp(argv[i], "--window-pos") == 0 && i + 1 < argc) {
@@ -78,6 +92,8 @@ void ParseCLI(int argc, char* argv[]) {
             } else {
                 SDLApp_SetRenderer(RENDERER_OPENGL);
             }
+        } else if (strcmp(argv[i], "--font-test") == 0) {
+            g_font_test_mode = true;
         }
     }
 }

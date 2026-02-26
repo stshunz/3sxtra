@@ -12,14 +12,18 @@
 
 #include <SDL3/SDL.h>
 
+#ifndef PLATFORM_RPI4
 typedef enum FlowState { INIT, DIALOG_OPENED, COPY_ERROR, COPY_SUCCESS } ResourceCopyingFlowState;
 
 static ResourceCopyingFlowState flow_state = INIT;
+#endif
 
 /** @brief Check whether a file exists at the given path. */
 static bool file_exists(const char* path) {
     SDL_PathInfo path_info;
-    SDL_GetPathInfo(path, &path_info);
+    if (!SDL_GetPathInfo(path, &path_info)) {
+        return false;
+    }
     return path_info.type == SDL_PATHTYPE_FILE;
 }
 
@@ -32,6 +36,7 @@ static bool check_if_file_present(const char* filename) {
 }
 
 /** @brief Ensure the resources directory exists (create if missing). */
+#ifndef PLATFORM_RPI4
 static void create_resources_directory() {
     char* path = Resources_GetPath(NULL);
     SDL_CreateDirectory(path);
@@ -55,11 +60,21 @@ static bool copy_file(const char* rom_path, const char* src_name, const char* ds
 
 /** @brief SDL folder-dialog callback — copies required game files when a folder is selected. */
 static void open_folder_dialog_callback(void* userdata, const char* const* filelist, int filter) {
+    /* filelist is NULL when the dialog is cancelled, closed, or unavailable
+       (e.g. headless Linux / Batocera where no dialog backend exists). */
+    if (!filelist || !filelist[0]) {
+        SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                     "Folder dialog returned no selection (cancelled or unavailable)");
+        flow_state = COPY_ERROR;
+        return;
+    }
+
     const char* rom_path = filelist[0];
     bool success = true;
     success &= copy_file(rom_path, "THIRD/SF33RD.AFS", "SF33RD.AFS");
     flow_state = success ? COPY_SUCCESS : COPY_ERROR;
 }
+#endif
 
 /** @brief Build and return the full path to a file in the resources directory (caller frees). */
 char* Resources_GetPath(const char* file_path) {
@@ -104,6 +119,14 @@ bool Resources_CheckIfPresent() {
 
 /** @brief Drive the resource-copying state machine (dialog → copy → done). */
 bool Resources_RunResourceCopyingFlow() {
+#ifdef PLATFORM_RPI4
+    /* Batocera / headless Linux has no desktop dialog backend.
+       Log a clear error instead of spinning forever or crashing. */
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "Resources not found. On RPi4/Batocera, place SF33RD.AFS in the rom/ folder "
+                 "next to the executable (no file-picker available).");
+    return false;
+#else
     switch (flow_state) {
     case INIT:
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION,
@@ -141,4 +164,5 @@ bool Resources_RunResourceCopyingFlow() {
     }
 
     return false;
+#endif
 }

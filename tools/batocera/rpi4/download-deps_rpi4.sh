@@ -65,6 +65,18 @@ if [ ! -f "$STB_DIR/stb_image.h" ]; then
 fi
 
 # -----------------------------
+# simde (header-only)
+# -----------------------------
+
+SIMDE_DIR="$THIRD_PARTY/simde"
+
+if [ -d "$SIMDE_DIR" ]; then
+    echo "simde already exists."
+else
+    git clone --depth 1 https://github.com/simd-everywhere/simde.git "$SIMDE_DIR"
+fi
+
+# -----------------------------
 # glad
 # -----------------------------
 

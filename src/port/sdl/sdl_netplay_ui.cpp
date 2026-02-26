@@ -1019,7 +1019,8 @@ void SDLNetplayUI_Render(int window_width, int window_height) {
                             Netplay_SetRemoteIP(peers[i].ip);
                             Netplay_SetRemotePort(peers[i].port);
                             Netplay_SetPlayerNumber(0); // We clicked Connect = P1
-                            Netplay_SetLocalPort(50000);
+                            extern unsigned short g_netplay_port;
+                            Netplay_SetLocalPort(g_netplay_port);
                             lobby_reset();
                             Netplay_Begin();
                         }

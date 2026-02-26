@@ -226,6 +226,7 @@ bool mods_menu_shader_bypass_enabled = false;
 bool game_paused = false;
 static bool frame_rate_uncapped = false;
 static bool vsync_enabled = true; // user preference, independent of frame_rate_uncapped
+static bool present_only_mode = false; // when true, EndFrame re-blits canvas without re-rendering game
 bool show_debug_hud = false;
 
 // FPS history — unbounded, grows since game start
@@ -815,7 +816,9 @@ void SDLApp_BeginFrame() {
         SDL_RenderClear(sdl_renderer);
     }
 
-    SDLGameRenderer_BeginFrame();
+    if (!present_only_mode) {
+        SDLGameRenderer_BeginFrame();
+    }
 }
 
 static /** @brief Center an SDL_FRect within the window. */
@@ -1019,15 +1022,17 @@ void SDLApp_EndFrame() {
     TRACE_ZONE_N("EndFrame");
     Broadcast_Update();
 
-    // Render all queued tasks to the FBO
-    SDLGameRenderer_RenderFrame();
+    // Render all queued tasks to the FBO (skip in present-only mode — canvas already has last frame)
+    if (!present_only_mode) {
+        SDLGameRenderer_RenderFrame();
+    }
 
     int win_w, win_h;
     SDL_GetWindowSize(window, &win_w, &win_h);
 
     if (g_renderer_backend == RENDERER_SDL2D) {
         // --- SDL2D Backend ---
-        if (!game_paused) {
+        if (!game_paused && !present_only_mode) {
             ADX_ProcessTracks();
         }
 
@@ -1842,7 +1847,7 @@ void SDLApp_EndFrame() {
     // Run sound processing — after GPU submit so CPU audio decode
     // overlaps with GPU processing the submitted command buffer.
     TRACE_SUB_BEGIN("AudioProcess");
-    if (!game_paused) {
+    if (!game_paused && !present_only_mode) {
         ADX_ProcessTracks();
     }
     TRACE_SUB_END();
@@ -2112,18 +2117,16 @@ bool SDLApp_IsMenuVisible() {
 void SDLApp_SetVSync(bool enabled) {
     vsync_enabled = enabled;
 
-    // Only apply to the GPU if we're not in uncapped mode (uncapped forces vsync off)
-    if (!frame_rate_uncapped) {
-        if (g_renderer_backend == RENDERER_OPENGL) {
-            SDL_GL_SetSwapInterval(enabled ? 1 : 0);
-        } else if (g_renderer_backend == RENDERER_SDLGPU && gpu_device && window) {
-            SDL_SetGPUSwapchainParameters(gpu_device,
-                                          window,
-                                          SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-                                          enabled ? SDL_GPU_PRESENTMODE_VSYNC : SDL_GPU_PRESENTMODE_IMMEDIATE);
-        } else if (g_renderer_backend == RENDERER_SDL2D && sdl_renderer) {
-            SDL_SetRenderVSync(sdl_renderer, enabled ? 1 : 0);
-        }
+    // Always apply to the GPU — vsync is independent of frame rate uncap
+    if (g_renderer_backend == RENDERER_OPENGL) {
+        SDL_GL_SetSwapInterval(enabled ? 1 : 0);
+    } else if (g_renderer_backend == RENDERER_SDLGPU && gpu_device && window) {
+        SDL_SetGPUSwapchainParameters(gpu_device,
+                                      window,
+                                      SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
+                                      enabled ? SDL_GPU_PRESENTMODE_VSYNC : SDL_GPU_PRESENTMODE_IMMEDIATE);
+    } else if (g_renderer_backend == RENDERER_SDL2D && sdl_renderer) {
+        SDL_SetRenderVSync(sdl_renderer, enabled ? 1 : 0);
     }
 
     Config_SetBool(CFG_KEY_VSYNC, enabled);
@@ -2137,29 +2140,9 @@ bool SDLApp_IsVSyncEnabled() {
 void SDLApp_ToggleFrameRateUncap() {
     frame_rate_uncapped = !frame_rate_uncapped;
 
-    if (frame_rate_uncapped) {
-        // Uncapping: force vsync off for max speed
-        if (g_renderer_backend == RENDERER_OPENGL) {
-            SDL_GL_SetSwapInterval(0);
-        } else if (g_renderer_backend == RENDERER_SDLGPU && gpu_device && window) {
-            SDL_SetGPUSwapchainParameters(
-                gpu_device, window, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, SDL_GPU_PRESENTMODE_IMMEDIATE);
-        } else if (g_renderer_backend == RENDERER_SDL2D && sdl_renderer) {
-            SDL_SetRenderVSync(sdl_renderer, 0);
-        }
-    } else {
-        // Re-capping: restore user's vsync preference
-        if (g_renderer_backend == RENDERER_OPENGL) {
-            SDL_GL_SetSwapInterval(vsync_enabled ? 1 : 0);
-        } else if (g_renderer_backend == RENDERER_SDLGPU && gpu_device && window) {
-            SDL_SetGPUSwapchainParameters(gpu_device,
-                                          window,
-                                          SDL_GPU_SWAPCHAINCOMPOSITION_SDR,
-                                          vsync_enabled ? SDL_GPU_PRESENTMODE_VSYNC : SDL_GPU_PRESENTMODE_IMMEDIATE);
-        } else if (g_renderer_backend == RENDERER_SDL2D && sdl_renderer) {
-            SDL_SetRenderVSync(sdl_renderer, vsync_enabled ? 1 : 0);
-        }
-    }
+    // VSync is never touched here — the VSync checkbox controls it independently.
+    // When uncapped + VSync ON:  rendering is decoupled, game stays at 59.6 fps
+    // When uncapped + VSync OFF: full speed benchmarking (no pacer, no vsync)
 
     // Reset frame deadline so the pacer doesn't spiral on re-enable
     frame_deadline = 0;
@@ -2169,6 +2152,20 @@ void SDLApp_ToggleFrameRateUncap() {
 
 bool SDLApp_IsFrameRateUncapped() {
     return frame_rate_uncapped;
+}
+
+/** @brief Re-present the last rendered frame without running game logic.
+ *  Used in decoupled mode to render at uncapped FPS while game ticks at 59.6. */
+void SDLApp_PresentOnly(void) {
+    present_only_mode = true;
+    SDLApp_BeginFrame();  // skips SDLGameRenderer_BeginFrame (no FBO clear)
+    SDLApp_EndFrame();    // skips SDLGameRenderer_RenderFrame + audio, re-blits existing canvas
+    present_only_mode = false;
+}
+
+/** @brief Get the target frame time for the game logic tick rate (59.6 fps). */
+Uint64 SDLApp_GetTargetFrameTimeNS(void) {
+    return target_frame_time_ns;
 }
 
 void SDLApp_ClearLibrashaderIntermediate() {

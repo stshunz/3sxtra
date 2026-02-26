@@ -86,9 +86,6 @@ extern bool game_paused;
 s32 system_init_level;
 MPP mpp_w;
 
-static bool is_game_initialized = false;
-static bool are_resources_checked = false;
-static bool is_running_resource_flow = false;
 const char* g_shm_suffix = NULL;
 
 // ⚡ Bolt: Input Lag Test Globals
@@ -112,34 +109,7 @@ void njUserMain();
 void cpLoopTask();
 void cpInitTask();
 
-/**
- * @brief Makes sure resources are present.
- * @return `true` if resources are present and execution can proceed, `false` otherwise.
- */
-static bool run_resource_flow() {
-    if (are_resources_checked) {
-        return true;
-    }
 
-    if (!is_running_resource_flow) {
-        are_resources_checked = Resources_CheckIfPresent();
-
-        if (are_resources_checked) {
-            return true;
-        }
-
-        is_running_resource_flow = true;
-    }
-
-    are_resources_checked = Resources_RunResourceCopyingFlow();
-
-    if (are_resources_checked) {
-        // Cleanup
-        is_running_resource_flow = false;
-    }
-
-    return are_resources_checked;
-}
 
 /**
  * @brief Initialize the AFS (Archive File System) for reading game data.
@@ -169,7 +139,7 @@ static void afs_init() {
 /**
  * @brief Pre-render frame step: process input, run game logic, flush rendering.
  *
- * Skipped when the game is paused or resources haven't been verified yet.
+ * Skipped when the game is paused.
  */
 static void step_0() {
     TRACE_ZONE_N("GameLogic");
@@ -178,21 +148,9 @@ static void step_0() {
         return;
     }
 
-    if (!run_resource_flow()) {
-        TRACE_ZONE_END();
-        return;
-    }
-
-    if (!is_game_initialized) {
-        afs_init();
-        game_init();
-        is_game_initialized = true;
-    }
-
-    if (is_game_initialized) {
-        AFS_RunServer();
-        game_step_0();
-    }
+    MenuBridge_StepGate();
+    AFS_RunServer();
+    game_step_0();
     TRACE_ZONE_END();
 }
 
@@ -204,11 +162,6 @@ static void step_0() {
 static void step_1() {
     TRACE_ZONE_N("PostRender");
     if (game_paused) {
-        TRACE_ZONE_END();
-        return;
-    }
-
-    if (!run_resource_flow() || !is_game_initialized) {
         TRACE_ZONE_END();
         return;
     }
@@ -226,16 +179,81 @@ int main(int argc, char* argv[]) {
     init_windows_console();
     SDLApp_Init();
 
+    /* ── Synchronous resource check + game init ──────────────────
+     * Verify required assets exist BEFORE entering the main loop.
+     * On desktop: triggers the folder-dialog copy flow if missing.
+     * On RPi4/headless: logs an error (no dialog backend). */
+    if (!Resources_CheckIfPresent()) {
+#ifdef PLATFORM_RPI4
+        fatal_error("Resources not found. Place SF33RD.AFS in the rom/ folder "
+                    "next to the executable.");
+#else
+        /* Desktop: run the dialog-based copy flow synchronously */
+        while (!Resources_CheckIfPresent()) {
+            if (!Resources_RunResourceCopyingFlow()) {
+                SDL_Delay(16); /* yield while waiting for dialog */
+            }
+        }
+#endif
+    }
+
+    afs_init();
+    game_init();
+
     Menu_UpdateNetworkLabel();
 
+    /* Timing state for decoupled rendering mode (F5 + VSync ON) */
+    Uint64 last_tick_time = SDL_GetTicksNS();
+    Uint64 game_accumulator = 0;
+
     while (is_running) {
-        SDLApp_BeginFrame();
-        step_0();
-        SDLApp_EndFrame(); // Present blocks here when vsync is active
-        TRACE_SUB_BEGIN("PollEvents");
-        is_running = SDLApp_PollEvents(); // Pump input right after present
-        TRACE_SUB_END();
-        step_1();
+        /* Determine whether game logic should tick this iteration.
+         *
+         * Capped (!uncapped):           always tick (1:1 game-to-render, pacer in EndFrame)
+         * Uncapped + VSync OFF:         always tick (full speed benchmarking)
+         * Uncapped + VSync ON:          tick only when accumulator >= target_frame_time (decoupled)
+         */
+        bool should_tick_game;
+
+        if (SDLApp_IsFrameRateUncapped() && SDLApp_IsVSyncEnabled()) {
+            /* === Decoupled mode === */
+            Uint64 now = SDL_GetTicksNS();
+            Uint64 elapsed = now - last_tick_time;
+            last_tick_time = now;
+
+            /* Cap elapsed to prevent spiral of death (~3 frames max) */
+            Uint64 target_ns = SDLApp_GetTargetFrameTimeNS();
+            Uint64 max_elapsed = target_ns * 3;
+            if (elapsed > max_elapsed) elapsed = max_elapsed;
+
+            game_accumulator += elapsed;
+            should_tick_game = (game_accumulator >= target_ns);
+            if (should_tick_game) {
+                game_accumulator -= target_ns;
+            }
+        } else {
+            /* Normal or full-speed mode — always tick */
+            should_tick_game = true;
+            /* Keep timing state fresh for next decoupled switch */
+            last_tick_time = SDL_GetTicksNS();
+            game_accumulator = 0;
+        }
+
+        if (should_tick_game) {
+            SDLApp_BeginFrame();
+            step_0();
+            SDLApp_EndFrame();
+            TRACE_SUB_BEGIN("PollEvents");
+            is_running = SDLApp_PollEvents();
+            TRACE_SUB_END();
+            step_1();
+        } else {
+            /* Re-present the existing canvas (no game logic, no FBO clear) */
+            SDLApp_PresentOnly();
+            TRACE_SUB_BEGIN("PollEvents");
+            is_running = SDLApp_PollEvents();
+            TRACE_SUB_END();
+        }
         TRACE_FRAME_MARK();
     }
 

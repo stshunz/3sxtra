@@ -21,6 +21,11 @@ void SDLApp_Exit();
 void SDLApp_SetVSync(bool enabled);
 bool SDLApp_IsVSyncEnabled();
 
+// Frame Rate Uncap (decoupled rendering)
+void SDLApp_PresentOnly(void);
+Uint64 SDLApp_GetTargetFrameTimeNS(void);
+bool SDLApp_IsFrameRateUncapped(void);
+
 unsigned int SDLApp_GetPassthruShaderProgram();
 unsigned int SDLApp_GetSceneShaderProgram();
 unsigned int SDLApp_GetSceneArrayShaderProgram();
